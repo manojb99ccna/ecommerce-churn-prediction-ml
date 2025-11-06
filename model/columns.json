@@ -1,0 +1,23 @@
+[
+  "age",
+  "account_age_days",
+  "last_login_days",
+  "total_spent",
+  "orders_count",
+  "support_tickets",
+  "gender_Male",
+  "gender_Other",
+  "country_Canada",
+  "country_Germany",
+  "country_Pakistan",
+  "country_Sri Lanka",
+  "country_UK",
+  "country_USA",
+  "membership_Silver",
+  "currency_CAD",
+  "currency_EUR",
+  "currency_GBP",
+  "currency_LKR",
+  "currency_PKR",
+  "currency_USD"
+]
