@@ -1,99 +1,73 @@
-import os
 import pandas as pd
+import os
+import joblib
+import json
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-import joblib
-import json
 
-# ---------- CONFIG ----------
-RAW_DATA_PATH = "data/raw/"
-PROCESSED_DATA_PATH = "data/processed/"
-MODEL_PATH = "model/"
-
-# Hardcoded file name
-file_name = "churn_small.csv"
-
-numeric_cols = [
-    "age",
-    "account_age_days",
-    "last_login_days",
-    "total_spent",
-    "orders_count",
-    "support_tickets"
-]
-
-categorical_cols = [
-    "gender",
-    "country",
-    "membership",
-    "currency"
-]
-
-target_col = "churn"
-# --------------------------------
+# === File paths ===
+RAW_PATH = "data/raw/churn_full.csv"  # change if needed
+PROCESSED_PATH = "data/processed/churn_full_processed.csv"
+PIPELINE_PATH = "model/preprocess_pipeline.pkl"
+COLUMNS_PATH = "model/columns.json"
 
 def preprocess():
-    file_path = os.path.join(RAW_DATA_PATH, file_name)
-
-    if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
-        return
-
-    print(f"📂 Loading dataset: {file_path}")
-    df = pd.read_csv(file_path)
-
+    print(f"📂 Loading dataset: {RAW_PATH}")
+    df = pd.read_csv(RAW_PATH)
     print(f"✅ Loaded data: {df.shape}")
 
-    # Remove missing values
-    df = df.dropna()
+    # === Normalize churn column ===
+    if "churn" not in df.columns:
+        if "churned" in df.columns:
+            df = df.rename(columns={"churned": "churn"})
+        else:
+            raise ValueError("❌ Neither 'churn' nor 'churned' found in dataset")
 
-    # Separate target (if exists)
-    if target_col in df.columns:
-        y = df[target_col]
-        X = df.drop(columns=[target_col])
-    else:
-        y = None
-        X = df.copy()
+    # === Drop ID column ===
+    if "customer_id" in df.columns:
+        df = df.drop("customer_id", axis=1)
 
-    # Build preprocessing pipeline
-    preprocessor = ColumnTransformer(
+    # === Split X and y ===
+    X = df.drop("churn", axis=1)
+    y = df["churn"].astype(int)
+
+    # === Define columns ===
+    num_cols = ["age", "account_age_days", "last_login_days", "total_spent", "orders_count", "support_tickets"]
+    cat_cols = ["gender", "country", "membership", "currency"]
+
+    # === Preprocessing pipeline ===
+    numeric_transformer = StandardScaler()
+    categorical_transformer = OneHotEncoder(handle_unknown="ignore")
+
+    pipeline = ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), numeric_cols),
-            ("cat", OneHotEncoder(drop='first', sparse_output=False), categorical_cols)
+            ("num", numeric_transformer, num_cols),
+            ("cat", categorical_transformer, cat_cols)
         ]
     )
 
-    pipeline = Pipeline(steps=[("preprocessor", preprocessor)])
-
     X_processed = pipeline.fit_transform(X)
 
-    # Get final feature names
-    ohe = pipeline.named_steps["preprocessor"].named_transformers_["cat"]
-    ohe_features = ohe.get_feature_names_out(categorical_cols)
+    # === Get feature names ===
+    cat_feature_names = pipeline.named_transformers_["cat"].get_feature_names_out(cat_cols)
+    feature_names = num_cols + list(cat_feature_names)
 
-    final_columns = numeric_cols + list(ohe_features)
+    df_processed = pd.DataFrame(X_processed, columns=feature_names)
+    df_processed["churn"] = y.values
 
-    # Save processed CSV
-    processed_df = pd.DataFrame(X_processed, columns=final_columns)
-    if y is not None:
-        processed_df[target_col] = y.values
+    # === Save processed data ===
+    os.makedirs("data/processed", exist_ok=True)
+    os.makedirs("model", exist_ok=True)
+    df_processed.to_csv(PROCESSED_PATH, index=False)
 
-    processed_file = file_name.replace(".csv", "_processed.csv")
-    processed_path = os.path.join(PROCESSED_DATA_PATH, processed_file)
-    processed_df.to_csv(processed_path, index=False)
+    joblib.dump(pipeline, PIPELINE_PATH)
+    with open(COLUMNS_PATH, "w") as f:
+        json.dump(feature_names, f)
 
-    print(f"✅ Processed data saved: {processed_path}")
-
-    # Save scaler/encoder pipeline
-    joblib.dump(pipeline, os.path.join(MODEL_PATH, "preprocess_pipeline.pkl"))
-    print(f"✅ Saved preprocessing pipeline → model/preprocess_pipeline.pkl")
-
-    # Save final columns JSON
-    with open(os.path.join(MODEL_PATH, "columns.json"), "w") as f:
-        json.dump(final_columns, f, indent=2)
-    print(f"✅ Saved feature column list → model/columns.json")
-
+    print(f"✅ Processed data saved: {PROCESSED_PATH}")
+    print(f"✅ Saved preprocessing pipeline → {PIPELINE_PATH}")
+    print(f"✅ Saved feature column list → {COLUMNS_PATH}")
     print("\n🎉 Preprocessing complete!")
 
 if __name__ == "__main__":
